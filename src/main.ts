@@ -1,7 +1,8 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from '@/app.module';
 import { GlobalExceptionFilter } from '@/common/filters/global-exception.filter';
@@ -11,18 +12,21 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
-  const apiPrefix = configService.get<string>('app.apiPrefix') ?? 'api/v1';
-  const port = configService.get<number>('app.port') ?? 3000;
+  const apiPrefix = configService.get<string>('app.apiPrefix') ?? '';
+  const port = configService.get<number>('app.port') ?? 8000;
   const corsOrigins = configService.get<string[]>('app.corsOrigins') ?? [];
   const isProduction = configService.get<string>('app.env') === 'production';
   const enableSwagger = configService.get<boolean>('app.enableSwagger') ?? true;
 
   app.use(helmet());
+  app.use(cookieParser());
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : true,
     credentials: true,
   });
-  app.setGlobalPrefix(apiPrefix);
+  if (apiPrefix) {
+    app.setGlobalPrefix(apiPrefix);
+  }
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
@@ -34,7 +38,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.useGlobalFilters(new GlobalExceptionFilter(configService));
-  app.useGlobalInterceptors(new ResponseInterceptor());
+  app.useGlobalInterceptors(new ResponseInterceptor(app.get(Reflector)));
   app.enableShutdownHooks();
 
   if (!isProduction && enableSwagger) {
@@ -49,7 +53,8 @@ async function bootstrap(): Promise<void> {
   }
 
   await app.listen(port);
-  logger.log(`Application listening on http://localhost:${port}/${apiPrefix}`);
+  const baseUrl = apiPrefix ? `http://localhost:${port}/${apiPrefix}` : `http://localhost:${port}`;
+  logger.log(`Application listening on ${baseUrl}`);
 }
 
 void bootstrap();
